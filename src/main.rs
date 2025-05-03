@@ -151,10 +151,37 @@ fn main() {
                 pc += 1;
             }
             2 => {
-                println!("2");
+                // binary arithmetic
+                let sub = ((inst >> 24) & 0xF) as u8;
+                let r = self.pop_i32();
+                let l = self.pop_i32();
+                let res = match sub {
+                    0 => l.wrapping_add(r),
+                    1 => l.wrapping_sub(r),
+                    2 => l.wrapping_mul(r),
+                    3 => if r != 0 { l / r } else { 0 },
+                    4 => if r != 0 { l % r } else { 0 },
+                    5 => l & r,
+                    6 => l | r,
+                    7 => l ^ r,
+                    8 => l.wrapping_shl(r as u32), // potentially need different implementation here?
+                    9 => ((l as u32).wrapping_shr(r as u32)) as i32,
+                    11 => l.wrapping_shr(r as u32), // asr
+                    _ => 0,
+                };
+                self.push(res); 
+            
             }
             3 => {
-                println!("3");
+                // unary
+                let sub = ((inst >> 24) & 0xF) as u8;
+                let v = self.pop_i32();
+                let res = match sub {
+                    0 => -v,
+                    1 => !v,
+                    _ => v,
+                };
+                self.push(res);
             }
             4 => {
                 println!("4");
