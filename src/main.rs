@@ -3,6 +3,27 @@ use std::fs::File;
 use std::env::args;
 use std::process::exit;
 
+/// Sign‑extend a u32 `value` whose low `bits` bits are the real data.
+fn sign_extend(value: u32, bits: u8) -> i32 {
+    let shift = 32 - bits as i32;
+    ((value << shift) as i32) >> shift
+}
+
+/// Pop a 4‑byte little‑endian i32 from the stack and advance SP upward.
+fn pop_i32(stack: &[u8; 4096], sp: &mut usize) -> i32 {
+    let raw = &stack[*sp..*sp + 4];
+    let v = i32::from_le_bytes(raw.try_into().unwrap());
+    *sp = (*sp + 4).min(4096);
+    v
+}
+
+/// Push a 4‑byte little‑endian i32 onto the stack, moving SP downward.
+fn push(stack: &mut [u8; 4096], sp: &mut usize, v: i32) {
+    let bytes = v.to_le_bytes();
+    *sp = sp.saturating_sub(4);
+    stack[*sp..*sp + 4].copy_from_slice(&bytes);
+}
+
 fn main() {
     let mut stack: [u8; 4096] = [0; 4096];
     let mut sp: usize = 4096;
@@ -148,9 +169,9 @@ fn main() {
             }
             2 => {
                 // binary arithmetic
-                let sub = ((inst >> 24) & 0xF) as u8;
-                let r = self.pop_i32();
-                let l = self.pop_i32();
+                let sub = ((instr >> 24) & 0xF) as u8;
+                let r = pop_i32(&stack, &mut sp);
+                let l = pop_i32(&stack, &mut sp);
                 let res = match sub {
                     0 => l.wrapping_add(r),
                     1 => l.wrapping_sub(r),
@@ -160,52 +181,58 @@ fn main() {
                     5 => l & r,
                     6 => l | r,
                     7 => l ^ r,
-                    8 => l.wrapping_shl(r as u32), // potentially need different implementation here?
+                    8 => l.wrapping_shl(r as u32),
                     9 => ((l as u32).wrapping_shr(r as u32)) as i32,
-                    11 => l.wrapping_shr(r as u32), // asr
+                    11 => l.wrapping_shr(r as u32),
                     _ => 0,
                 };
-                self.push(res); 
+                push(&mut stack, &mut sp, res);
             }
             3 => {
-                // unary
-                let sub = ((inst >> 24) & 0xF) as u8;
-                let v = self.pop_i32();
+                // unary arithmetic
+                let sub = ((instr >> 24) & 0xF) as u8;
+                let v = pop_i32(&stack, &mut sp);
                 let res = match sub {
                     0 => -v,
                     1 => !v,
                     _ => v,
                 };
-                self.push(res);
+                push(&mut stack, &mut sp, res);
             }
             4 => {
                 // stprint
-                let raw = (inst >> 2) & 0x03FF_FFFF;
-                let off = (VM::sign_extend(raw, 26) << 2) as isize;
-                let mut addr = (self.sp as isize + off) as usize;
-                while addr < RAM_SIZE {
-                    let b = self.mem[addr];
+                let raw = (instr >> 2) & 0x03FF_FFFF;
+                let off = (sign_extend(raw, 26) << 2) as isize;
+                let mut addr = (sp as isize + off) as usize;
+                while addr < 4096 {
+                    let b = stack[addr];
                     addr += 1;
-                    if b == 0 { break; }
-                    if b == 1 { continue; }
+                    if b == 0 {
+                        break;
+                    }
+                    if b == 1 {
+                        continue;
+                    }
                     print!("{}", b as char);
                 }
                 io::stdout().flush().unwrap();
             }
             5 => {
                 // call
-                let raw = (inst >> 2) & 0x03FF_FFFF;
-                let off = (VM::sign_extend(raw, 26) << 2) as isize;
-                let ret = self.pc as i32;
-                self.push(ret);
-                self.pc = (((self.pc as isize) + off) as usize).min(RAM_SIZE);
+                let raw = (instr >> 2) & 0x03FF_FFFF;
+                let off = (sign_extend(raw, 26) << 2) as isize;
+                let ret = (pc * 4) as i32;
+                push(&mut stack, &mut sp, ret);
+                let new_pc = ((pc as isize) + off / 4) as usize;
+                pc = new_pc.min(4096 / 4);
             }
             6 => {
                 // return
-                let offset = ((inst >> 2) & 0x03FF_FFFF) as usize * 4;
-                self.sp = (self.sp + offset).min(RAM_SIZE);
-                let ret = self.pop_i32() as usize;
-                self.pc = ret.min(RAM_SIZE);
+                let framesize = ((instr >> 2) & 0x03FF_FFFF) as usize * 4;
+                sp = (sp + framesize).min(4096);
+                let ret_i32 = pop_i32(&stack, &mut sp);
+                let ret_usz = (ret_i32 as usize) / 4;
+                pc = ret_usz.min(4096 / 4);
             }
             7 => {
                 println!("7");
