@@ -27,16 +27,6 @@ fn main() {
 
     reader.read(&mut stack).expect("reading failure");
 
-    //stack.iter().for_each(|x| println!("{:02x}", x));
-    // println!();
-
-    // for i in 0..bytes_read {
-    //     println!("{:02x}", instr[i]);
-    // }
-
-    // println!("{}", stack_pointer);
-    // println!("{:02x}", stack[stack_pointer]);
-    
     loop {
         instr = (stack[(pc*4)+3] as u32) << 24 |
                 (stack[(pc*4)+2] as u32) << 16 |
@@ -148,6 +138,8 @@ fn main() {
                     sp = 4095;
                 }
 
+                println!("current sp: {}", sp);
+
                 pc += 1;
             }
             2 => {
@@ -170,7 +162,6 @@ fn main() {
                     _ => 0,
                 };
                 self.push(res); 
-            
             }
             3 => {
                 // unary
@@ -232,6 +223,17 @@ fn main() {
             }
             15 => {
                 println!("15");
+                let value: i32 = ((instr << 4) as i32) >> 4;
+
+                println!("value: {}", value);
+                sp -= 4;
+
+                stack[sp..sp+4].copy_from_slice(&value.to_be_bytes());
+
+                stack[sp..sp+4].iter().for_each(|x| println!("{:08b}", x));
+                println!("current sp: {}", sp);
+
+                pc += 1;
             }
             _ => println!("Error, not an opcode: {}", opcode),
         }
