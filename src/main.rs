@@ -1,4 +1,4 @@
-use std::io::{self, Read, Write, BufReader, Stdin};
+use std::io::{self, Read, Write, BufReader};
 use std::fs::File;
 use std::env::args;
 use std::process::exit;
@@ -44,34 +44,34 @@ fn main() {
         return;
     }
 
-    buf.iter().for_each(|x| println!("{:02x}", x));
+    // buf.iter().for_each(|x| println!("{:02x}", x));
 
     reader.read(&mut stack).expect("reading failure");
 
     loop {
+        // println!("pc: {}", pc);
         instr = (stack[((pc*4)+3) as usize] as u32) << 24 |
                 (stack[((pc*4)+2) as usize] as u32) << 16 |
                 (stack[((pc*4)+1) as usize] as u32) << 8 |
                 (stack[(pc*4) as usize] as u32);
 
-        stack[(pc*4) as usize..((pc*4)+3) as usize].iter().for_each(|x| println!("{:02x}: {}", x, *x as char));
-        println!("{:032b}", instr);
-        if pc > 32 {break;}
+        // stack[(pc*4) as usize..((pc*4)+3) as usize].iter().for_each(|x| println!("{:02x}: {}", x, *x as char));
+        // println!("{:032b}", instr);
 
         opcode = (instr >> 28) as u8;
 
         match opcode {
             0 => {
-                println!("0");
+                // println!("0");
                 let subcode = ((instr << 4) >> 28) as u8;
 
                 match subcode {
                     0 => {
-                        println!("exit");
+                        // println!("exit");
                         exit((instr & 0b1111) as i32);
                     }
                     1 => {
-                        println!("swap");
+                        // println!("swap");
                         let from_offset: usize = ((instr << 8) >> 20) as usize;
                         let to_offset: usize = ((instr << 20) >> 20) as usize;
                         let from: [u8; 4] = stack[sp+from_offset..sp+from_offset+4]
@@ -82,10 +82,10 @@ fn main() {
                         stack[sp+to_offset..sp+to_offset+4].copy_from_slice(&from);
                     }
                     2 => {
-                        println!("nop");
+                        // println!("nop");
                     }
                     4 => {
-                        println!("input");
+                        // println!("input");
                         let mut inp: String = String::new();
                         let inp_type: String;
                         let inp_val: String;
@@ -96,22 +96,22 @@ fn main() {
 
                         inp_type = inp.chars().take(2).collect();
 
-                        println!("{}", inp.to_uppercase());
+                        // println!("{}", inp.to_uppercase());
 
                         if inp_type == "0X" {
-                            println!("bytes");
+                            // println!("bytes");
                             inp_val = inp.chars().skip(2).collect();
                             inp_bytes = i32::from_str_radix(&inp_val, 16).expect("Input hex failed").to_le_bytes();
-                            inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
+                            // inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         } else if inp_type == "0B" {
-                            println!("bits");
+                            // println!("bits");
                             inp_val = inp.chars().skip(2).collect();
                             inp_bytes = i32::from_str_radix(&inp_val, 2).expect("Input bits failed").to_le_bytes();
-                            inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
+                            // inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         } else {
-                            println!("base 10");
+                            // println!("base 10");
                             inp_bytes = inp.parse::<i32>().expect("Input base 10 failed").to_le_bytes();
-                            inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
+                            // inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         }
                     
                         sp -= 4;
@@ -119,29 +119,33 @@ fn main() {
 
                     }
                     5 => {
-                        println!("stinput");
+                        // println!("stinput");
                         let mut max_char: usize = ((instr << 8) >> 8) as usize;
                         let mut inp: String = String::new();
 
                         if max_char == 0 {
                             max_char = 0xffffff;
                         }
-                        println!("{}", max_char);
+                        // println!("{}", max_char);
 
                         io::stdin().read_line(&mut inp).unwrap();
 
                         inp = inp.trim().to_string();
 
                         if inp.len() == 0 {
-                            inp = "0".to_string();
+                            inp = "\0".to_string();
                         }
 
                         inp = inp.chars().take(max_char).collect();
 
-                        println!("{}", inp.len());
+                        // println!("{}", inp.len());
 
+                        // println!("sp: {}", sp);
                         sp -= inp.len();
+                        // println!("sp: {}", sp);
+                        // println!("b4");
                         stack[sp..sp+inp.len()].copy_from_slice(&inp.chars().map(|x: char| x as u8).collect::<Vec<u8>>());
+                        // println!("af");
 
                     }
                     15 => {
@@ -153,9 +157,9 @@ fn main() {
                 pc += 1;
             }
             1 => {
-                println!("1");
+                // println!("1");
 
-                let mut offset: u32 = instr & 0xfffffff as u32;
+                let offset: u32 = instr & 0xfffffff as u32;
 
                 sp += offset as usize;
 
@@ -163,7 +167,7 @@ fn main() {
                     sp = 4095;
                 }
 
-                println!("current sp: {}", sp);
+                // println!("current sp: {}", sp);
 
                 pc += 1;
             }
@@ -187,6 +191,7 @@ fn main() {
                     _ => 0,
                 };
                 push(&mut stack, &mut sp, res);
+                pc += 1;
             }
             3 => {
                 // unary arithmetic
@@ -198,6 +203,7 @@ fn main() {
                     _ => v,
                 };
                 push(&mut stack, &mut sp, res);
+                pc += 1;
             }
             4 => {
                 // stprint
@@ -216,49 +222,56 @@ fn main() {
                     print!("{}", b as char);
                 }
                 io::stdout().flush().unwrap();
+                pc += 1;
             }
             5 => {
                 // call
+                println!("6");
                 let raw = (instr >> 2) & 0x03FF_FFFF;
                 let off = (sign_extend(raw, 26) << 2) as isize;
                 let ret = (pc * 4) as i32;
                 push(&mut stack, &mut sp, ret);
                 let new_pc = ((pc as isize) + off / 4) as usize;
-                pc = new_pc.min(4096 / 4);
+                pc = new_pc.min(4096 / 4) as isize;
             }
             6 => {
                 // return
+                // println!("6");
                 let framesize = ((instr >> 2) & 0x03FF_FFFF) as usize * 4;
                 sp = (sp + framesize).min(4096);
                 let ret_i32 = pop_i32(&stack, &mut sp);
                 let ret_usz = (ret_i32 as usize) / 4;
-                pc = ret_usz.min(4096 / 4);
+                pc = ret_usz.min(4096 / 4) as isize;
             }
             7 => {
-                println!("7");
-                pc += 1;
+                // println!("7");
                 let offset: isize = (((instr << 4) as i32) 
                                     >> 4) as isize;
 
-                pc += offset;
+                // println!("{:0b}", instr);
+                // println!("{:0b}", offset);
+
+                pc += offset/4;
+                // println!("offset: {}", offset);
+                // println!("{}", pc);
             }
             8 => {
-                println!("8");
+                // println!("8");
                 let condition: u8 = ((instr << 4) >> 29) as u8;
                 let offset: isize = (((((instr >> 2) & 0x007fffff)
                                     << 9) as i32) >> 7) as isize;
                 let mut bytes: [u8; 4] = [0; 4];
-                let left: i32;
-                let right: i32;
+                let _left: i32;
+                let _right: i32;
 
                 bytes[0] = if sp <= 4095 {stack[sp]} else {0};
                 bytes[1] = if sp + 1 <= 4095 {stack[sp+1]} else {0};
                 bytes[2] = if sp + 2 <= 4095 {stack[sp+2]} else {0};
                 bytes[3] = if sp + 3 <= 4095 {stack[sp+3]} else {0};
 
-                let right = (bytes[3] << 24) as i32 |
-                                 (bytes[2] << 16) as i32 |
-                                 (bytes[1] << 8) as i32  |
+                let right = (bytes[3] as i32) << 24 |
+                                 (bytes[2] as i32) << 16 |
+                                 (bytes[1] as i32) << 8  |
                                  (bytes[0]) as i32;
 
                 bytes[0] = if sp + 4 <= 4095 {stack[sp]} else {0};
@@ -266,46 +279,52 @@ fn main() {
                 bytes[2] = if sp + 6 <= 4095 {stack[sp+2]} else {0};
                 bytes[3] = if sp + 7 <= 4095 {stack[sp+3]} else {0};
 
-                let left = (bytes[3] << 24) as i32 |
-                                 (bytes[2] << 16) as i32 |
-                                 (bytes[1] << 8) as i32  |
+                let left = (bytes[3] as i32) << 24 |
+                                 (bytes[2] as i32) << 16 |
+                                 (bytes[1] as i32) << 8  |
                                  (bytes[0]) as i32;
 
                 match condition {
-                    0 => if left == right {pc += offset-1;}
-                    1 => if left != right {pc += offset-1;}
-                    2 => if left < right {pc += offset-1;}
-                    3 => if left > right {pc += offset-1;}
-                    4 => if left <= right {pc += offset-1;}
-                    5 => if left >= right {pc += offset-1;}
+                    0 => if left == right {pc += (offset/4)-1;}
+                    1 => if left != right {pc += (offset/4)-1;}
+                    2 => if left < right {pc += (offset/4)-1;}
+                    3 => if left > right {pc += (offset/4)-1;}
+                    4 => if left <= right {pc += (offset/4)-1;}
+                    5 => if left >= right {pc += (offset/4)-1;}
                     _ => println!("BinIf invalid condition"),
                 }
                 pc += 1;
 
             }
             9 => {
-                println!("9");
+                // println!("9");
 
                 let condition: u8 = ((instr << 5) >> 30) as u8;
                 let offset: isize = (((instr << 7) as i32) >> 7) as isize;
+                let mut bytes: [u8; 4] = [0; 4];
+                
+                bytes[0] = if sp <= 4095 {stack[sp]} else {0};
+                bytes[1] = if sp + 1 <= 4095 {stack[sp+1]} else {0};
+                bytes[2] = if sp + 2 <= 4095 {stack[sp+2]} else {0};
+                bytes[3] = if sp + 3 <= 4095 {stack[sp+3]} else {0};
 
-                let value = (stack[sp+3] << 24) as i32 |
-                                 (stack[sp+2] << 16) as i32 |
-                                 (stack[sp+1] << 8) as i32  |
-                                 stack[sp] as i32;
+                let value = (bytes[3] as i32) << 24 |
+                                 (bytes[2] as i32) << 16 |
+                                 (bytes[1] as i32) << 8  |
+                                 bytes[0] as i32;
 
                 match condition {
-                    0 => if value == 0 {pc += offset-1;}
-                    1 => if value != 0 {pc += offset-1;}
-                    2 => if value < 0 {pc += offset-1;}
-                    3 => if value >= 0 {pc += offset-1;}
+                    0 => if value == 0 {pc += (offset/4)-1;}
+                    1 => if value != 0 {pc += (offset/4)-1;}
+                    2 => if value < 0 {pc += (offset/4)-1;}
+                    3 => if value >= 0 {pc += (offset/4)-1;}
                     _ => println!("UnIf bad condition"),
                 }
 
                 pc += 1;
             }
             12 => {
-                println!("12");
+                // println!("12");
 
                 let offset: usize = ((instr << 4) >> 4) as usize;
                 let mut value: [u8; 4] = [0; 4];
@@ -319,7 +338,7 @@ fn main() {
                 pc += 1;
             }
             13 => {
-                println!("13");
+                // println!("13");
                 let offset: usize = ((instr << 4) >> 6) as usize;
                 let fmt: u8 = (instr & 0b11) as u8;
                 let value: i32 = ((stack[sp + offset + 3] as u32) << 24 |
@@ -346,20 +365,20 @@ fn main() {
                 pc += 1;
             }
             14 => {
-                println!("14");
+                // println!("14");
                 pc += 1;
             }
             15 => {
-                println!("15");
+                // println!("15");
                 let value: i32 = ((instr << 4) as i32) >> 4;
 
                 // println!("value: {}", value);
-                value.to_le_bytes().iter().for_each(|x| println!("{}", *x as char));
+                // value.to_le_bytes().iter().for_each(|x| println!("{}", *x as char));
                 sp -= 4;
 
                 stack[sp..sp+4].copy_from_slice(&value.to_le_bytes());
 
-                stack[sp..sp+4].iter().for_each(|x| println!("{:08b}", x));
+                // stack[sp..sp+4].iter().for_each(|x| println!("{:08b}", x));
                 // println!("current sp: {}", sp);
 
                 pc += 1;
