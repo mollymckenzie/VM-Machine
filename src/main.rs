@@ -6,7 +6,7 @@ use std::process::exit;
 fn main() {
     let mut stack: [u8; 4096] = [0; 4096];
     let mut sp: usize = 4096;
-    let mut pc: usize = 0;
+    let mut pc: isize = 0;
     let mut buf: [u8; 4] = [0; 4];
     let mut instr: u32;
     let mut opcode: u8;
@@ -28,12 +28,13 @@ fn main() {
     reader.read(&mut stack).expect("reading failure");
 
     loop {
-        instr = (stack[(pc*4)+3] as u32) << 24 |
-                (stack[(pc*4)+2] as u32) << 16 |
-                (stack[(pc*4)+1] as u32) << 8 |
-                (stack[pc*4] as u32);
+        instr = (stack[((pc*4)+3) as usize] as u32) << 24 |
+                (stack[((pc*4)+2) as usize] as u32) << 16 |
+                (stack[((pc*4)+1) as usize] as u32) << 8 |
+                (stack[(pc*4) as usize] as u32);
+
+        stack[(pc*4) as usize..((pc*4)+3) as usize].iter().for_each(|x| println!("{:02x}: {}", x, *x as char));
         println!("{:032b}", instr);
-        pc += 1;
         if pc > 32 {break;}
 
         opcode = (instr >> 28) as u8;
@@ -79,16 +80,16 @@ fn main() {
                         if inp_type == "0X" {
                             println!("bytes");
                             inp_val = inp.chars().skip(2).collect();
-                            inp_bytes = i32::from_str_radix(&inp_val, 16).expect("Input hex failed").to_be_bytes();
+                            inp_bytes = i32::from_str_radix(&inp_val, 16).expect("Input hex failed").to_le_bytes();
                             inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         } else if inp_type == "0B" {
                             println!("bits");
                             inp_val = inp.chars().skip(2).collect();
-                            inp_bytes = i32::from_str_radix(&inp_val, 2).expect("Input bits failed").to_be_bytes();
+                            inp_bytes = i32::from_str_radix(&inp_val, 2).expect("Input bits failed").to_le_bytes();
                             inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         } else {
                             println!("base 10");
-                            inp_bytes = inp.parse::<i32>().expect("Input base 10 failed").to_be_bytes();
+                            inp_bytes = inp.parse::<i32>().expect("Input base 10 failed").to_le_bytes();
                             inp_bytes.iter().for_each(|x: &u8| println!("{:08b}", x));
                         }
                     
@@ -133,7 +134,10 @@ fn main() {
             1 => {
                 println!("1");
 
-                sp += 4;
+                let mut offset: u32 = instr & 0xfffffff as u32;
+
+                sp += offset as usize;
+
                 if sp > 4095 {
                     sp = 4095;
                 }
@@ -205,33 +209,131 @@ fn main() {
             }
             7 => {
                 println!("7");
+                pc += 1;
+                let offset: isize = (((instr << 4) as i32) 
+                                    >> 4) as isize;
+
+                pc += offset;
             }
             8 => {
                 println!("8");
+                let condition: u8 = ((instr << 4) >> 29) as u8;
+                let offset: isize = (((((instr >> 2) & 0x007fffff)
+                                    << 9) as i32) >> 7) as isize;
+                let mut bytes: [u8; 4] = [0; 4];
+                let left: i32;
+                let right: i32;
+
+                bytes[0] = if sp <= 4095 {stack[sp]} else {0};
+                bytes[1] = if sp + 1 <= 4095 {stack[sp+1]} else {0};
+                bytes[2] = if sp + 2 <= 4095 {stack[sp+2]} else {0};
+                bytes[3] = if sp + 3 <= 4095 {stack[sp+3]} else {0};
+
+                let right = (bytes[3] << 24) as i32 |
+                                 (bytes[2] << 16) as i32 |
+                                 (bytes[1] << 8) as i32  |
+                                 (bytes[0]) as i32;
+
+                bytes[0] = if sp + 4 <= 4095 {stack[sp]} else {0};
+                bytes[1] = if sp + 5 <= 4095 {stack[sp+1]} else {0};
+                bytes[2] = if sp + 6 <= 4095 {stack[sp+2]} else {0};
+                bytes[3] = if sp + 7 <= 4095 {stack[sp+3]} else {0};
+
+                let left = (bytes[3] << 24) as i32 |
+                                 (bytes[2] << 16) as i32 |
+                                 (bytes[1] << 8) as i32  |
+                                 (bytes[0]) as i32;
+
+                match condition {
+                    0 => if left == right {pc += offset-1;}
+                    1 => if left != right {pc += offset-1;}
+                    2 => if left < right {pc += offset-1;}
+                    3 => if left > right {pc += offset-1;}
+                    4 => if left <= right {pc += offset-1;}
+                    5 => if left >= right {pc += offset-1;}
+                    _ => println!("BinIf invalid condition"),
+                }
+                pc += 1;
+
             }
             9 => {
                 println!("9");
+
+                let condition: u8 = ((instr << 5) >> 30) as u8;
+                let offset: isize = (((instr << 7) as i32) >> 7) as isize;
+
+                let value = (stack[sp+3] << 24) as i32 |
+                                 (stack[sp+2] << 16) as i32 |
+                                 (stack[sp+1] << 8) as i32  |
+                                 stack[sp] as i32;
+
+                match condition {
+                    0 => if value == 0 {pc += offset-1;}
+                    1 => if value != 0 {pc += offset-1;}
+                    2 => if value < 0 {pc += offset-1;}
+                    3 => if value >= 0 {pc += offset-1;}
+                    _ => println!("UnIf bad condition"),
+                }
+
+                pc += 1;
             }
             12 => {
                 println!("12");
+
+                let offset: usize = ((instr << 4) >> 4) as usize;
+                let mut value: [u8; 4] = [0; 4];
+
+                sp -= 4;
+    
+                value.copy_from_slice(&stack[sp+4+offset..sp+8+offset]);  
+
+                stack[sp..sp+4].copy_from_slice(&value);
+
+                pc += 1;
             }
             13 => {
                 println!("13");
+                let offset: usize = ((instr << 4) >> 6) as usize;
+                let fmt: u8 = (instr & 0b11) as u8;
+                let value: i32 = ((stack[sp + offset + 3] as u32) << 24 |
+                                 (stack[sp + offset + 2] as u32) << 16 |
+                                 (stack[sp + offset + 1] as u32) << 8 | 
+                                 stack[sp + offset] as u32) as i32;
+
+                match fmt {
+                    0 => {
+                        println!("{}", value);
+                    }
+                    1 => {
+                        println!("0x{:x}", value);
+                    }
+                    2 => {
+                        println!("0b{:b}", value);
+                    }
+                    3 => {
+                        println!("0o{:o}", value);
+                    }
+                    _ => println!("Bad fmt"),
+                }
+
+                pc += 1;
             }
             14 => {
                 println!("14");
+                pc += 1;
             }
             15 => {
                 println!("15");
                 let value: i32 = ((instr << 4) as i32) >> 4;
 
-                println!("value: {}", value);
+                // println!("value: {}", value);
+                value.to_le_bytes().iter().for_each(|x| println!("{}", *x as char));
                 sp -= 4;
 
-                stack[sp..sp+4].copy_from_slice(&value.to_be_bytes());
+                stack[sp..sp+4].copy_from_slice(&value.to_le_bytes());
 
                 stack[sp..sp+4].iter().for_each(|x| println!("{:08b}", x));
-                println!("current sp: {}", sp);
+                // println!("current sp: {}", sp);
 
                 pc += 1;
             }
