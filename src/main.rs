@@ -184,13 +184,33 @@ fn main() {
                 self.push(res);
             }
             4 => {
-                println!("4");
+                // stprint
+                let raw = (inst >> 2) & 0x03FF_FFFF;
+                let off = (VM::sign_extend(raw, 26) << 2) as isize;
+                let mut addr = (self.sp as isize + off) as usize;
+                while addr < RAM_SIZE {
+                    let b = self.mem[addr];
+                    addr += 1;
+                    if b == 0 { break; }
+                    if b == 1 { continue; }
+                    print!("{}", b as char);
+                }
+                io::stdout().flush().unwrap();
             }
             5 => {
-                println!("5");
+                // call
+                let raw = (inst >> 2) & 0x03FF_FFFF;
+                let off = (VM::sign_extend(raw, 26) << 2) as isize;
+                let ret = self.pc as i32;
+                self.push(ret);
+                self.pc = (((self.pc as isize) + off) as usize).min(RAM_SIZE);
             }
             6 => {
-                println!("6");
+                // return
+                let offset = ((inst >> 2) & 0x03FF_FFFF) as usize * 4;
+                self.sp = (self.sp + offset).min(RAM_SIZE);
+                let ret = self.pop_i32() as usize;
+                self.pc = ret.min(RAM_SIZE);
             }
             7 => {
                 println!("7");
