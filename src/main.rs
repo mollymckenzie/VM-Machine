@@ -3,7 +3,7 @@ use std::fs::File;
 use std::env::args;
 use std::process::exit;
 
-/// Sign‑extend a u32 `value` whose low `bits` bits are the real data.
+/// Sign‑extend a u32 value whose low bits bits are the real data.
 fn sign_extend(value: u32, bits: u8) -> i32 {
     let shift = 32 - bits as i32;
     ((value << shift) as i32) >> shift
@@ -149,7 +149,13 @@ fn main() {
 
                     }
                     15 => {
-                        println!("Debug Code: {}", (instr << 8) >> 8);
+                        println!(
+                            "DEBUG: PC @ 0x{:04x}, SP @ 0x{:04x}, Mem: 0x0 - 0x1000, instruction's value field: 0x{:08x}",
+                            (pc * 4),
+                            sp,
+                            instr & 0x0FFFFFFF
+                        );
+                        
                     }
                     _ => println!("error inmpossible subcode: {} {}", opcode, subcode),
 
@@ -372,5 +378,3 @@ fn main() {
     }
 
 }
-
-
