@@ -244,57 +244,43 @@ fn main() {
                 pc = ret_usz.min(4096 / 4) as isize;
             }
             7 => {
-                // println!("7");
-                let offset: isize = (((instr << 4) as i32) 
-                                    >> 4) as isize;
-
-                // println!("{:0b}", instr);
-                // println!("{:0b}", offset);
-
-                pc += offset/4;
-                // println!("offset: {}", offset);
-                // println!("{}", pc);
+                // extract the 26‑bit signed offset (in instructions)
+                let raw   = (instr >> 2) & 0x03FF_FFFF;         // bits [27:2]
+                let delta = sign_extend(raw, 26) as isize;      // now a signed instruction‑count
+                // jump relative to the *current* pc
+                pc = (pc as isize + delta) as isize;            
             }
             8 => {
-                // println!("8");
-                let condition: u8 = ((instr << 4) >> 29) as u8;
-                let offset: isize = (((((instr >> 2) & 0x007fffff)
-                                    << 9) as i32) >> 7) as isize;
-                let mut bytes: [u8; 4] = [0; 4];
-                let _left: i32;
-                let _right: i32;
-
-                bytes[0] = if sp <= 4095 {stack[sp]} else {0};
-                bytes[1] = if sp + 1 <= 4095 {stack[sp+1]} else {0};
-                bytes[2] = if sp + 2 <= 4095 {stack[sp+2]} else {0};
-                bytes[3] = if sp + 3 <= 4095 {stack[sp+3]} else {0};
-
-                let right = (bytes[3] as i32) << 24 |
-                                 (bytes[2] as i32) << 16 |
-                                 (bytes[1] as i32) << 8  |
-                                 (bytes[0]) as i32;
-
-                bytes[0] = if sp + 4 <= 4095 {stack[sp]} else {0};
-                bytes[1] = if sp + 5 <= 4095 {stack[sp+1]} else {0};
-                bytes[2] = if sp + 6 <= 4095 {stack[sp+2]} else {0};
-                bytes[3] = if sp + 7 <= 4095 {stack[sp+3]} else {0};
-
-                let left = (bytes[3] as i32) << 24 |
-                                 (bytes[2] as i32) << 16 |
-                                 (bytes[1] as i32) << 8  |
-                                 (bytes[0]) as i32;
-
-                match condition {
-                    0 => if left == right {pc += (offset/4)-1;}
-                    1 => if left != right {pc += (offset/4)-1;}
-                    2 => if left < right {pc += (offset/4)-1;}
-                    3 => if left > right {pc += (offset/4)-1;}
-                    4 => if left <= right {pc += (offset/4)-1;}
-                    5 => if left >= right {pc += (offset/4)-1;}
-                    _ => println!("BinIf invalid condition"),
+                // 1) Extract condition code (bits 27:25)
+                let cond = ((instr >> 25) & 0x7) as u8;          
+                // 2) Extract the 23‑bit signed offset (in instructions)
+                let raw   = (instr >> 2) & 0x007FFFFF;           // bits [24:2]
+                let delta = sign_extend(raw, 23) as isize;       // signed instruction‑count
+                // 3) Peek the two i32s from the top of stack (no pop!)
+                let r = {
+                    let b = &stack[sp..sp+4];
+                    i32::from_le_bytes(b.try_into().unwrap())
+                };
+                let l = {
+                    let b = &stack[sp+4..sp+8];
+                    i32::from_le_bytes(b.try_into().unwrap())
+                };
+                // 4) Test the condition
+                let take = match cond {
+                    0 => l ==  r,  // eq
+                    1 => l !=  r,  // ne
+                    2 => l <   r,  // lt
+                    3 => l >   r,  // gt
+                    4 => l <=  r,  // le
+                    5 => l >=  r,  // ge
+                    _ => false,
+                };
+                // 5) Either jump or fall through
+                if take {
+                    pc = (pc as isize + delta) as isize;
+                } else {
+                    pc += 1;
                 }
-                pc += 1;
-
             }
             9 => {
                 // println!("9");
@@ -323,6 +309,7 @@ fn main() {
 
                 pc += 1;
             }
+            
             12 => {
                 // println!("12");
 
@@ -337,29 +324,25 @@ fn main() {
 
                 pc += 1;
             }
-            13 => {
-                // println!("13");
-                let offset: usize = ((instr << 4) >> 6) as usize;
-                let fmt: u8 = (instr & 0b11) as u8;
-                let value: i32 = ((stack[sp + offset + 3] as u32) << 24 |
-                                 (stack[sp + offset + 2] as u32) << 16 |
-                                 (stack[sp + offset + 1] as u32) << 8 | 
-                                 stack[sp + offset] as u32) as i32;
 
+            13 => {
+                // decode a 26‑bit signed offset, then shift it left 2 to get a byte‑offset
+                let raw = (instr >> 2) & 0x03FF_FFFF;
+                let off = (sign_extend(raw, 26) << 2) as isize;
+                // compute the absolute address
+                let addr = (sp as isize + off) as usize;
+                // grab exactly four bytes and reassemble as little‑endian i32
+                let word = &stack[addr..addr+4];
+                let value = i32::from_le_bytes(word.try_into().unwrap());
+
+                // format & print
+                let fmt = (instr & 0b11) as u8;
                 match fmt {
-                    0 => {
-                        println!("{}", value);
-                    }
-                    1 => {
-                        println!("0x{:x}", value);
-                    }
-                    2 => {
-                        println!("0b{:b}", value);
-                    }
-                    3 => {
-                        println!("0o{:o}", value);
-                    }
-                    _ => println!("Bad fmt"),
+                    0 => println!("{}",      value),
+                    1 => println!("0x{:x}", value),
+                    2 => println!("0b{:b}", value),
+                    3 => println!("0o{:o}", value),
+                    _ => unreachable!(),
                 }
 
                 pc += 1;
